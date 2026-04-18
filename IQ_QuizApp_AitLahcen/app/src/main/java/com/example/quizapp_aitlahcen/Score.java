@@ -1,5 +1,6 @@
 package com.example.quizapp_aitlahcen;
 
+import android.content.Intent;
 import android.os.Bundle;
 import android.widget.Button;
 import android.widget.TextView;
@@ -83,7 +84,21 @@ public class Score extends AppCompatActivity implements OnMapReadyCallback {
             updateScoreInSupabase(scoreObtenu);
         }
 
-        btnBackToMenu.setOnClickListener(v -> finish());
+        btnBackToMenu.setOnClickListener(v -> {
+            // On crée l'Intent vers ton activité de bienvenue (ex: WelcomeActivity)
+            Intent intent = new Intent(Score.this, WelcomeActivity.class);
+
+            // TRÈS IMPORTANT : On nettoie la pile d'activités pour éviter que l'utilisateur
+            // ne revienne sur la page de score en appuyant sur le bouton "Retour" du téléphone.
+            intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_NEW_TASK);
+
+            // Si tu veux garder l'utilisateur connecté, n'oublie pas de repasser le token
+            intent.putExtra("TOKEN", userToken);
+            intent.putExtra("USER_ID", userId);
+
+            startActivity(intent);
+            finish(); // Ferme l'activité Score
+        });
     }
 
     private void updateCommentUI(int score) {

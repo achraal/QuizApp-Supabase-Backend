@@ -3,7 +3,9 @@ package com.example.quizapp_aitlahcen;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.Button;
 import android.widget.ImageButton;
+import android.widget.SeekBar;
 import android.widget.TextView;
 import androidx.annotation.NonNull;
 import androidx.recyclerview.widget.RecyclerView;
@@ -14,9 +16,8 @@ public class AudioAdapter extends RecyclerView.Adapter<AudioAdapter.AudioViewHol
     private List<String> audioUrls;
     private OnAudioClickListener listener;
 
-    // Interface pour envoyer l'événement de clic à l'Activity
     public interface OnAudioClickListener {
-        void onPlayClick(String url);
+        void onPlayClick(String url, SeekBar seekBar, Button btnSpeed, ImageButton btnPlay);
     }
 
     public AudioAdapter(List<String> audioUrls, OnAudioClickListener listener) {
@@ -35,11 +36,18 @@ public class AudioAdapter extends RecyclerView.Adapter<AudioAdapter.AudioViewHol
     public void onBindViewHolder(@NonNull AudioViewHolder holder, int position) {
         String url = audioUrls.get(position);
 
-        // Extraction du nom du fichier pour l'affichage
+        // Extraction et formatage du nom pour l'affichage
         String fileName = url.substring(url.lastIndexOf("/") + 1);
-        holder.tvAudioName.setText("Séquence : " + fileName);
+        String cleanName = fileName.replace("_full_session.mp4", "")
+                .replace("_", " à ")
+                .replace("-", "/");
 
-        holder.btnPlay.setOnClickListener(v -> listener.onPlayClick(url));
+        holder.tvAudioName.setText("Session du " + cleanName);
+
+        // C'est ICI qu'on envoie tous les éléments à l'Activity
+        holder.btnPlay.setOnClickListener(v ->
+                listener.onPlayClick(url, holder.seekBar, holder.btnSpeed, holder.btnPlay)
+        );
     }
 
     @Override
@@ -50,11 +58,15 @@ public class AudioAdapter extends RecyclerView.Adapter<AudioAdapter.AudioViewHol
     static class AudioViewHolder extends RecyclerView.ViewHolder {
         TextView tvAudioName;
         ImageButton btnPlay;
+        SeekBar seekBar;    // Ajouté
+        Button btnSpeed;    // Ajouté
 
         public AudioViewHolder(@NonNull View itemView) {
             super(itemView);
             tvAudioName = itemView.findViewById(R.id.tvAudioName);
             btnPlay = itemView.findViewById(R.id.btnPlayAudio);
+            seekBar = itemView.findViewById(R.id.audioSeekBar); // ID du XML
+            btnSpeed = itemView.findViewById(R.id.btnSpeed);    // ID du XML
         }
     }
 }

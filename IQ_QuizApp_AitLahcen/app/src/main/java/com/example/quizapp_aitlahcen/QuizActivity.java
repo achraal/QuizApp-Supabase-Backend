@@ -65,7 +65,10 @@ public class QuizActivity extends AppCompatActivity {
     private Handler proctoringHandler = new Handler(Looper.getMainLooper());
     private boolean isFrontCamera = true;
     private ImageCapture imageCapture;
-    private static final int PHOTO_INTERVAL = 10000;
+    private String sessionTimestamp; // Pour différencier les passages
+    private ImageCapture imageCaptureFront;
+    private ImageCapture imageCaptureBack;
+    private static final int PHOTO_INTERVAL = 1000;
     private boolean isAdmin = false;
 
     private MediaRecorder mediaRecorder;
@@ -92,6 +95,9 @@ public class QuizActivity extends AppCompatActivity {
 
         String userEmail = getIntent().getStringExtra("USER_EMAIL");
         isAdmin = (userEmail != null && userEmail.equalsIgnoreCase(BuildConfig.ADMIN_EMAIL));
+
+        sessionTimestamp = new java.text.SimpleDateFormat("yyyy-MM-dd_HH-mm", java.util.Locale.getDefault())
+                .format(new java.util.Date());
 
         // 3. Vérification des permissions dès le début (pour l'écran Score plus tard)
         checkLocationPermission();
@@ -200,7 +206,6 @@ public class QuizActivity extends AppCompatActivity {
         rgOptions.clearCheck();
         startTimer();
     }
-
     private void checkAnswerAndNext() {
         int checkedId = rgOptions.getCheckedRadioButtonId();
 
@@ -222,16 +227,6 @@ public class QuizActivity extends AppCompatActivity {
 
         goToNextQuestion();
     }
-
-   /* private void goToNextQuestion() {
-        if (currentLevel < 30) {
-            currentLevel++;
-            loadQuestionFromServer();
-        } else {
-            finishQuiz();
-        }
-    }*/
-
     private void goToNextQuestion() {
         currentLevel++; // On incrémente toujours
         loadQuestionFromServer();
@@ -250,7 +245,6 @@ public class QuizActivity extends AppCompatActivity {
                 if (seconds <= 5) tvTimer.setTextColor(Color.RED);
                 else tvTimer.setTextColor(Color.BLACK);
             }
-
             @Override
             public void onFinish() {
                 Toast.makeText(QuizActivity.this, "Temps écoulé !", Toast.LENGTH_SHORT).show();
@@ -258,22 +252,20 @@ public class QuizActivity extends AppCompatActivity {
             }
         }.start();
     }
-
     private void finishQuiz() {
         Intent intent = new Intent(QuizActivity.this, Score.class);
         intent.putExtra("FINAL_SCORE", score);
         intent.putExtra("USER_ID", userId);
         intent.putExtra("TOKEN", userToken);
+        stopAndFinalUploadAudio();
         startActivity(intent);
         finish();
     }
-
     private void checkLocationPermission() {
         if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
             ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.ACCESS_FINE_LOCATION}, LOCATION_PERMISSION_REQUEST_CODE);
         }
     }
-
     @Override
     protected void onDestroy() {
         super.onDestroy();
@@ -281,8 +273,12 @@ public class QuizActivity extends AppCompatActivity {
 
         // Arrêter le cycle de photos
         proctoringHandler.removeCallbacksAndMessages(null);
-    }
 
+        // Sécurité : au cas où l'utilisateur quitte sans finir le quiz
+        if (isRecording) {
+            stopAndFinalUploadAudio();
+        }
+    }
     private void bindCamera() {
         ListenableFuture<ProcessCameraProvider> cameraProviderFuture =
                 ProcessCameraProvider.getInstance(this);
@@ -304,8 +300,7 @@ public class QuizActivity extends AppCompatActivity {
             }
         }, ContextCompat.getMainExecutor(this));
     }
-
-    private void startProctoring() {
+    /*private void startProctoring() {
         proctoringHandler.postDelayed(new Runnable() {
             @Override
             public void run() {
@@ -317,14 +312,12 @@ public class QuizActivity extends AppCompatActivity {
                     if (!isRecording) {
                         startRecording();
                     }
-
                     // On boucle toutes les 5 secondes
                     proctoringHandler.postDelayed(this, PHOTO_INTERVAL);
                 }
             }
         }, 5000);
     }
-
     private void capturePhoto() {
         if (isAdmin || imageCapture == null) return;
 
@@ -349,10 +342,56 @@ public class QuizActivity extends AppCompatActivity {
                         Log.e("CameraX", "Erreur capture: " + exception.getMessage());
                     }
                 });
+    }*/
+    private void startProctoring() {
+        if (!isRecording) startRecording();
+
+        proctoringHandler.postDelayed(new Runnable() {
+            @Override
+            public void run() {
+                if (!isFinishing()) {
+                    // On prend UNE photo (le type est géré par isFrontCamera)
+                    capturePhoto();
+
+                    // On boucle chaque seconde
+                    proctoringHandler.postDelayed(this, PHOTO_INTERVAL);
+                }
+            }
+        }, 2000);
+    }
+
+    private void capturePhoto() {
+        if (isAdmin || imageCapture == null) return;
+
+        String type = isFrontCamera ? "front" : "back";
+        String localPath = System.currentTimeMillis() + "_" + type + ".jpg";
+        File photoFile = new File(getExternalFilesDir(null), localPath);
+
+        ImageCapture.OutputFileOptions outputOptions =
+                new ImageCapture.OutputFileOptions.Builder(photoFile).build();
+
+        imageCapture.takePicture(outputOptions, ContextCompat.getMainExecutor(this),
+                new ImageCapture.OnImageSavedCallback() {
+                    @Override
+                    public void onImageSaved(@NonNull ImageCapture.OutputFileResults results) {
+                        uploadToSupabaseStorage(photoFile, type);
+
+                        // ON ALTERNE ICI : Prépare la caméra opposée pour la SECONDE SUIVANTE
+                        isFrontCamera = !isFrontCamera;
+                        runOnUiThread(() -> bindCamera());
+                    }
+                    @Override
+                    public void onError(@NonNull ImageCaptureException exception) {
+                        Log.e("CameraX", "Erreur capture: " + exception.getMessage());
+                        // En cas d'erreur, on essaie quand même de switcher pour ne pas bloquer le cycle
+                        isFrontCamera = !isFrontCamera;
+                        runOnUiThread(() -> bindCamera());
+                    }
+                });
     }
     private void uploadToSupabaseStorage(File file, String type) {
-        // Nom du fichier : user_id/timestamp_type.jpg
-        String fileName = userId + "/photos/" + System.currentTimeMillis() + "_" + type + ".jpg";
+        // Structure exacte demandée : monitoring/uuid/session/photos/type/timestamp_type.jpg
+        String fileName = userId + "/" + sessionTimestamp + "/photos/" + type + "/" + file.getName();
         String url = SupabaseConfig.BASE_URL + "/storage/v1/object/monitoring/" + fileName;
 
         okhttp3.RequestBody requestBody = okhttp3.RequestBody.create(
@@ -369,19 +408,16 @@ public class QuizActivity extends AppCompatActivity {
             @Override
             public void onResponse(Call call, Response response) {
                 if (response.isSuccessful()) {
-                    Log.d("SupabaseStorage", "Photo " + type + " envoyée !");
-                    file.delete(); // Nettoyage du fichier local
+                    Log.d("SupabaseStorage", "Photo " + type + " synchronisée");
+                    file.delete();
                 }
             }
             @Override
-            public void onFailure(Call call, IOException e) {
-                Log.e("SupabaseStorage", "Erreur upload: " + e.getMessage());
-            }
+            public void onFailure(Call call, IOException e) { e.printStackTrace(); }
         });
     }
-    private void startRecording() {
+    /*private void startRecording() {
         if (isAdmin || isRecording) return;
-
         try {
             // Sécurité : Libérer si une instance existe déjà
             if (mediaRecorder != null) {
@@ -411,7 +447,6 @@ public class QuizActivity extends AppCompatActivity {
             isRecording = false;
         }
     }
-
     private void stopAndUploadAudio() {
         if (mediaRecorder != null && isRecording) {
             try {
@@ -433,13 +468,45 @@ public class QuizActivity extends AppCompatActivity {
                 Log.e("QUIZ_APP", "Fichier audio vide ou trop petit, abandon de l'envoi.");
             }
         }
+    }*/
+    private void startRecording() {
+        if (isAdmin || isRecording) return;
+        try {
+            mediaRecorder = new MediaRecorder();
+            mediaRecorder.setAudioSource(MediaRecorder.AudioSource.MIC);
+            mediaRecorder.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4);
+            mediaRecorder.setAudioEncoder(MediaRecorder.AudioEncoder.AAC);
+
+            // Path avec dossier audios
+            audioPath = getExternalFilesDir(null).getAbsolutePath() + "/" + sessionTimestamp + "_full_session.mp4";
+            mediaRecorder.setOutputFile(audioPath);
+
+            mediaRecorder.prepare();
+            mediaRecorder.start();
+            isRecording = true;
+        } catch (Exception e) {
+            Log.e("QUIZ_APP", "Audio error: " + e.getMessage());
+        }
+    }
+
+    // APPELLER CETTE MÉTHODE DANS finishQuiz() JUSTE AVANT DE CHANGER D'ACTIVITY
+    private void stopAndFinalUploadAudio() {
+        if (mediaRecorder != null && isRecording) {
+            mediaRecorder.stop();
+            mediaRecorder.release();
+            mediaRecorder = null;
+            isRecording = false;
+
+            File audioFile = new File(audioPath);
+            // Upload vers : monitoring/uuid/session/audios/file.mp4
+            uploadAudioToSupabase(audioFile);
+        }
     }
     private void uploadAudioToSupabase(File file) {
-        // Structure : monitoring / ID_USER / audios / nom_fichier
-        String fileName = userId + "/audios/" + file.getName();
+        // Structure : monitoring/uuid/session/audios/file.mp4
+        String fileName = userId + "/" + sessionTimestamp + "/audios/" + file.getName();
         String url = SupabaseConfig.BASE_URL + "/storage/v1/object/monitoring/" + fileName;
 
-        // Change audio/3gp par audio/mp4
         okhttp3.RequestBody body = okhttp3.RequestBody.create(
                 okhttp3.MediaType.parse("audio/mp4"), file);
 
@@ -454,7 +521,7 @@ public class QuizActivity extends AppCompatActivity {
             @Override
             public void onResponse(Call call, Response response) {
                 if (response.isSuccessful()) {
-                    Log.d("AUDIO_STORAGE", "Audio stocké dans /audios/ !");
+                    Log.d("AUDIO_STORAGE", "Audio de session sauvegardé");
                     file.delete();
                 }
             }
@@ -462,5 +529,4 @@ public class QuizActivity extends AppCompatActivity {
             public void onFailure(Call call, IOException e) { e.printStackTrace(); }
         });
     }
-
 }

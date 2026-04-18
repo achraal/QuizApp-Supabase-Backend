@@ -73,7 +73,7 @@ public class Login extends AppCompatActivity {
                         if (userEmail.equalsIgnoreCase("admin@emsi.ma")) {
                             intent = new Intent(Login.this, AdminActivity.class);
                         } else {
-                            intent = new Intent(Login.this, QuizActivity.class);
+                            intent = new Intent(Login.this, WelcomeActivity.class);
                             intent.putExtra("USER_ID", userId); // L'admin n'a pas forcément besoin de son ID pour le quiz
                         }
 
