@@ -1,0 +1,20 @@
+# Supabase & Docker
+.temp/
+.env
+volumes/
+postgres/data/
+backend_local/supabase/.temp/
+backend_local/supabase/.branches/
+backend_local/supabase/config.toml
+
+# Ne pas ignorer les migrations
+!backend_local/supabase/migrations/
+
+# Logs et Système
+*.log
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
