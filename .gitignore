@@ -6,7 +6,7 @@ postgres/data/
 backend_local/supabase/.temp/
 backend_local/supabase/.branches/
 backend_local/supabase/config.toml
-backend_local/supabase/fastapi_app
+backend_local/fastapi_app
 
 node_modules/
 **/node_modules/
